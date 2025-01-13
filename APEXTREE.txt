@@ -1,0 +1,378 @@
+Category table
+-------------------- 
+ CREATE TABLE "IN_CATEGORY" 
+   (	"CT_ID" NUMBER, 
+	"CT_NAME" VARCHAR2(50), 
+	"PARENT_CODE" NUMBER, 
+	"CT_CODE" VARCHAR2(100), 
+	 PRIMARY KEY ("CT_ID")
+  USING INDEX  ENABLE
+   ) ;
+   
+ Item table
+--------------------   
+     CREATE TABLE "IN_ITEM" 
+   (	"ITEM_NO" NUMBER(30,0), 
+	"ITEM_NAME" VARCHAR2(100) NOT NULL ENABLE, 
+	"ITEM_ID" VARCHAR2(50), 
+	"CT_ID" NUMBER
+   ) ;
+
+Constraint
+----------
+  ALTER TABLE "IN_ITEM" ADD CONSTRAINT "FK_ITEM_CATEGORY" FOREIGN KEY ("CT_ID")
+	  REFERENCES "IN_CATEGORY" ("CT_ID") ENABLE;
+	  
+PL/SQL Function Body returning a CLOB
+--------------------   
+DECLARE
+    v_html CLOB;
+
+    -- Recursive procedure to build the category and item tree
+    PROCEDURE build_tree(p_parent_id IN NUMBER) IS
+
+     BEGIN
+     -- Fetch child categories for the current parent
+        FOR cat_rec IN (
+            SELECT 
+                c.CT_ID, 
+                c.CT_NAME,
+                c.CT_CODE
+            FROM 
+                IN_CATEGORY c
+            WHERE 
+                NVL(c.PARENT_CODE, 0) = p_parent_id
+            ORDER BY 
+                c.CT_ID
+        )
+
+        LOOP
+            -- Add category to the tree
+            v_html := v_html || '<li class="category" data-category-id="' || cat_rec.CT_ID || '">';
+            v_html := v_html || '<span class="toggle">+</span> ' || cat_rec.CT_CODE || '-' || cat_rec.CT_NAME;
+            v_html := v_html || '<ul class="nested">';
+
+            -- Fetch items directly under this category
+            FOR item_rec IN (
+                SELECT 
+                    i.ITEM_NAME, 
+                    i.ITEM_ID, 
+                    i.ITEM_NO 
+                FROM 
+                    IN_ITEM i
+                WHERE 
+                    i.CT_ID = cat_rec.CT_ID -- Ensure proper mapping
+                ORDER BY 
+                   i.ITEM_NO,i.ITEM_ID asc
+            )
+            LOOP
+                -- Add items to the tree
+                v_html := v_html || '<li class="item">' || item_rec.ITEM_ID || ' - ' || item_rec.ITEM_NAME || '</li>';
+            END LOOP;
+
+
+             -- Recursive call for child categories
+            build_tree(cat_rec.CT_ID);
+
+            -- Close the category list
+            v_html := v_html || '</ul>';
+            v_html := v_html || '</li>';
+        END LOOP;
+    END;
+
+
+    BEGIN
+    -- Initialize the HTML
+    v_html := '<ul id="categoryTree">';
+
+    -- Start building the tree from the root categories (where PARENT_CODE IS NULL or 0)
+    build_tree(0);
+
+    -- Close the HTML structure
+    v_html := v_html || '</ul>';
+
+    -- Return the HTML content
+    RETURN v_html;
+END;
+
+
+Header Text for add search field ,collapse and expand button
+-------------------------------------------------------------
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+    <!-- Search Bar -->
+    <div style="position: relative; flex: 1; margin-right: 10px;">
+        <input 
+            type="text" 
+            id="treeSearch" 
+            placeholder="🔍 Search categories or items...(ابحث عن الفئات أو العناصر...)" 
+            style="width: 100%; padding: 12px 40px 12px 16px; border: 1px solid #ccc; border-radius: 25px; font-size: 14px; background: #f9f9f9; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1); outline: none; transition: all 0.3s ease;"
+        />
+        <span 
+            id="clearSearch" 
+            style="position: absolute; top: 50%; right: 16px; transform: translateY(-50%); cursor: pointer; color: #888; font-size: 16px; display: none;"
+        >
+            ✖
+        </span>
+    </div>
+
+    <!-- Buttons -->
+    <div style="display: flex; gap: 10px;">
+        <button id="expandAll" type="button" style="padding: 10px 16px; background: linear-gradient(135deg, #007bff, #0056b3); color: white; font-size: 14px; border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); transition: all 0.3s ease;">
+            Expand<br>توسيع
+
+        </button>
+        <button id="collapseAll" type="button" style="padding: 10px 16px; background: linear-gradient(135deg, #6c757d, #495057); color: white; font-size: 14px; border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); transition: all 0.3s ease;">
+            Collapse<br>طيّ
+
+        </button>
+    </div>
+</div>
+
+
+
+Function and Global Variable Declaration
+-----------------------------------------
+document.addEventListener('DOMContentLoaded', function () {
+    // Toggle functionality for expand/collapse
+    document.querySelectorAll('#categoryTree .toggle').forEach(function (toggle) {
+        toggle.addEventListener('click', function () {
+            const nested = this.parentElement.querySelector('.nested');
+            if (nested) {
+                nested.classList.toggle('active');
+                this.textContent = nested.classList.contains('active') ? '−' : '+';
+            }
+        });
+    });
+
+    // Expand All Button
+    document.getElementById('expandAll').addEventListener('click', function (event) {
+        event.preventDefault(); // Prevent the default behavior
+        document.querySelectorAll('#categoryTree .nested').forEach(function (nested) {
+            nested.classList.add('active'); // Expand all nested lists
+        });
+        document.querySelectorAll('#categoryTree .toggle').forEach(function (toggle) {
+            toggle.textContent = '−'; // Set all toggle buttons to "−"
+        });
+    });
+
+    // Collapse All Button
+    document.getElementById('collapseAll').addEventListener('click', function (event) {
+        event.preventDefault(); // Prevent the default behavior
+        document.querySelectorAll('#categoryTree .nested').forEach(function (nested) {
+            nested.classList.remove('active'); // Collapse all nested lists
+        });
+        document.querySelectorAll('#categoryTree .toggle').forEach(function (toggle) {
+            toggle.textContent = '+'; // Set all toggle buttons to "+"
+        });
+    });
+
+// Search functionality
+    const searchInput = document.getElementById('treeSearch');
+    searchInput.addEventListener('input', function () {
+        const query = searchInput.value.toLowerCase();
+        const treeItems = document.querySelectorAll('#categoryTree li');
+
+        treeItems.forEach(function (item) {
+            const text = item.textContent.toLowerCase();
+            if (text.includes(query)) {
+                item.style.display = 'flex'; // Show matching items
+                let parent = item.parentElement;
+                while (parent && parent.id !== 'categoryTree') {
+                    if (parent.classList.contains('nested')) {
+                        parent.classList.add('active'); // Expand parent category
+                    }
+                    parent = parent.parentElement;
+                }
+            } else {
+                item.style.display = 'none'; // Hide non-matching items
+            }
+        });
+    });
+});
+
+
+
+Inline CSS
+------------------
+
+
+/* Professional Button Styles */
+#expandAll, #collapseAll {
+    font-family: 'Roboto', Arial, sans-serif;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Expand All Button */
+#expandAll {
+    background: linear-gradient(135deg, #007bff, #0056b3); /* Professional blue gradient */
+}
+
+/* Collapse All Button */
+#collapseAll {
+    background: linear-gradient(135deg, #6c757d, #495057); /* Neutral gray gradient */
+}
+
+/* Hover Effects */
+#expandAll:hover {
+    background: linear-gradient(135deg, #0056b3, #003f7f); /* Darker blue on hover */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+
+#collapseAll:hover {
+    background: linear-gradient(135deg, #495057, #343a40); /* Darker gray on hover */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+
+/* Active Effects */
+#expandAll:active, #collapseAll:active {
+    transform: translateY(2px); /* Button pressed down effect */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+
+/* Enhanced Search Bar */
+#treeSearch {
+    font-family: 'Roboto', Arial, sans-serif;
+    font-size: 14px;
+    width: 100%;
+    padding: 12px 40px 12px 16px; /* Space for icon and text */
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    background: #f9f9f9;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+#treeSearch:focus {
+    border-color: #007bff;
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(0, 123, 255, 0.2);
+    outline: none;
+}
+
+/* Clear Button for Search */
+#clearSearch {
+    font-size: 16px;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+#clearSearch:hover {
+    color: #ff5252;
+}
+
+
+
+/* General tree styling */
+#categoryTree {
+    font-family: 'Roboto', Arial, sans-serif; /* Use a clean, professional font */
+    font-size: 14px;
+    list-style: none;
+    margin: 0;
+    padding: 10px;
+    color: #333;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Styling the category and item containers */
+#categoryTree li {
+    margin: 5px 0;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s ease-in-out;
+}
+
+/* Hover effect for better interactivity */
+#categoryTree li:hover {
+    background-color: #f5f5f5;
+}
+
+/* Toggle button for expand/collapse */
+#categoryTree .toggle {
+    cursor: pointer;
+    font-weight: bold;
+    color: #007bff;
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #007bff;
+    border-radius: 50%;
+    font-size: 12px;
+    line-height: 18px;
+}
+
+/* Icons for categories and items */
+#categoryTree .category::before,
+#categoryTree .item::before {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    background-size: contain;
+}
+
+/* Folder icon for categories */
+#categoryTree .category::before {
+    background-image: url('https://cdn-icons-png.flaticon.com/512/25/25694.png'); /* Folder icon */
+    background-size: 16px;
+    background-repeat: no-repeat;
+}
+
+/* File icon for items */
+#categoryTree .item::before {
+    background-image: url('https://cdn-icons-png.flaticon.com/512/1828/1828884.png'); /* File icon */
+    background-size: 16px;
+    background-repeat: no-repeat;
+}
+
+/* Nested lists (subcategories and items) */
+#categoryTree .nested {
+    display: none; /* Initially hidden */
+    list-style: none;
+    padding-left: 20px;
+    border-left: 1px solid #ddd;
+}
+
+/* Active (expanded) nested lists */
+#categoryTree .nested.active {
+    display: block;
+    animation: expand 0.3s ease-in-out;
+}
+
+/* Expand animation */
+@keyframes expand {
+    from {
+        max-height: 0;
+        opacity: 0;
+    }
+    to {
+        max-height: 500px;
+        opacity: 1;
+    }
+}
+
+/* Professional hover effect for toggle button */
+#categoryTree .toggle:hover {
+    background-color: #007bff;
+    color: #fff;
+}
